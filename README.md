@@ -17,9 +17,18 @@ At first, I was trying to import my google doc notes to my vault. I found that e
 - Prompts for a save location via a system dialog
 - Preserves: headings, bold, italic, strikethrough, highlights, hyperlinks, ordered and nested lists, tables, blockquotes, code blocks, and images embedded from the vault
 
+### Demo
+1. Batch Import
+[Screencast From 2026-05-29 18-18-15.webm](https://github.com/user-attachments/assets/99d5ef64-0396-429d-abb2-a677db555af0)
+
+2. Single Import
+[Screencast From 2026-05-29 18-24-57.webm](https://github.com/user-attachments/assets/7df5c6e6-854b-4294-8123-294f58f589a4)
+
+
 ## Installation
 
 ### From Obsidian Community Plugins
+NOTE: This plugin is yet to approve by administrator manually, please consider using manual installation first
 1. Open **Settings → Community plugins → Browse**
 2. Search for **DOCX Importer**
 3. Click **Install**, then **Enable**
