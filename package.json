@@ -1,0 +1,28 @@
+{
+  "name": "obsidian-docx-importer",
+  "version": "0.1.0",
+  "description": "Import DOCX files into Obsidian vault as Markdown",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/turndown": "^5.0.4",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "0.17.3",
+    "obsidian": "latest",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "docx": "^9.7.1",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.8.0",
+    "marked": "^18.0.4",
+    "turndown": "^7.2.0"
+  }
+}
