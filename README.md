@@ -8,6 +8,7 @@ At first, I was trying to import my google doc notes to my vault. I found that e
 ## Features
 
 ### Import (DOCX → Markdown)
+- **Batch import** — select multiple `.docx` files at once; each gets its own subfolder with an editable name and real-time conflict detection
 - Creates a subfolder containing the converted `.md` note, a copy of the original `.docx`, and an `attachments/` folder for extracted images
 - Preserves: headings, bold, italic, strikethrough, highlights, text color, hyperlinks, ordered and nested lists, tables, blockquotes, inline code, fenced code blocks
 - Images are saved as vault attachments and linked with Obsidian wikilink syntax (`![[attachments/image1.png]]`)
@@ -34,16 +35,18 @@ NOTE: This plugin is yet to approve by administrator manually, please consider u
 3. Click **Install**, then **Enable**
 
 ### Manual
-1. Download `main.js` and `manifest.json` from the [latest release](../../releases/latest)
-2. Copy both files to `<vault>/.obsidian/plugins/docx-importer/`
+1. Download `main.js`, `styles.css`, and `manifest.json` from the [latest release](../../releases/latest)
+2. Copy all three files to `<vault>/.obsidian/plugins/docx-importer/`
 3. Enable the plugin in **Settings → Community plugins**
 
 ## Usage
 
 ### Import
 1. Click the **file-up** ribbon icon, or run **Import DOCX file** from the command palette
-2. Pick a `.docx` file, choose a subfolder name and parent folder
-3. The converted note opens automatically
+2. Pick one or more `.docx` files (hold **Ctrl** or **Shift** to select multiple)
+3. For each file, edit the subfolder name if needed — conflicts are flagged in real time
+4. Choose a parent folder, then click **Import**
+5. The first converted note opens automatically
 
 ### Export
 1. Open the Markdown note you want to export
