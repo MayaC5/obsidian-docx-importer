@@ -2,7 +2,7 @@
 
 An [Obsidian](https://obsidian.md) desktop plugin to import `.docx` files into your vault as Markdown, and export Markdown notes back to `.docx`.
 
-Creater Note:
+Creator Note:
 At first, I was trying to import my google doc notes to my vault. I found that even if google doc do have export to markdown file, some of the style and format could not be kept, so this idea has came.
 
 ## Features

@@ -1,0 +1,57 @@
+.docx-batch-list {
+	max-height: 260px;
+	overflow-y: auto;
+	margin: 8px 0 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.docx-batch-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.docx-batch-row:last-child {
+	border-bottom: none;
+}
+
+.docx-batch-header {
+	background-color: var(--background-secondary);
+	padding: 4px 10px;
+}
+
+.docx-batch-header .docx-batch-filename,
+.docx-batch-header .docx-batch-label {
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+}
+
+.docx-batch-filename {
+	flex: 0 0 40%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.docx-batch-label {
+	flex: 1;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.docx-batch-name-input {
+	flex: 1;
+	min-width: 0;
+}
+
+.docx-batch-conflict {
+	flex: 0 0 auto;
+	font-size: var(--font-ui-smaller);
+	color: var(--color-orange);
+}

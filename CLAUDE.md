@@ -28,7 +28,7 @@ Then reload the plugin in Obsidian: **Settings → Community plugins → reload 
 
 This is a desktop-only Obsidian community plugin (TypeScript + esbuild). Everything bundles into a single `main.js` at the repo root, which is what Obsidian loads.
 
-**Entry point:** `src/main.ts` — registers the ribbon icon and command palette command, both of which open `ImportModal`.
+**Entry point:** `src/main.ts` — registers two ribbon icons and two command palette commands: one pair opens `ImportModal` (import), the other triggers `exportActiveNote()` (export). Plugin settings (`PluginSettings`) are loaded via `loadData()`/`saveData()` and exposed through `DocxImporterSettingsTab` (`src/ui/SettingsTab.ts`). Currently one setting: `wikilinksAsPlainText` (controls export behavior only).
 
 **Conversion pipeline** (`src/converter.ts`):
 ```
@@ -61,6 +61,23 @@ All vault writes go through `app.vault` API (not raw `fs`) so Obsidian tracks th
 **UI flow** (`src/ui/ImportModal.ts`):
 1. User picks a `.docx` via Electron `dialog` API (`require('electron').remote`), types a subfolder name (pre-filled from filename), and picks a parent folder via `FolderSuggester`.
 2. On confirm: validate (non-empty name, no existing subfolder conflict) → read file with Node `fs.readFileSync` → run conversion → write files → open the new `.md` in the editor.
+
+**Export pipeline** (`src/exporter.ts`):
+```
+Active .md note (string)
+  → preprocessMarkdown()   strip YAML frontmatter, ![[img]] → <img src>, [[wikilinks]] → text/remove
+  → marked.parse()         custom ==highlight== token → <mark>; standard MD → HTML
+  → processBlocks()        walk DOM → docx.js Paragraph / Table / ImageRun objects
+  → Document + Packer      docx npm package assembles final .docx buffer
+  → fs.writeFileSync       written to user-chosen path via Electron save dialog
+```
+
+Key details in `exporter.ts`:
+- `preprocessMarkdown()` handles three rewrites before `marked`: strip `---` frontmatter, convert `![[path]]` image wikilinks to `<img src="path">`, and either flatten or drop `[[Note]]` wikilinks depending on `wikilinksAsPlainText`.
+- `collectInlineItems()` / `renderInlineItems()` form a two-phase inline renderer: the first walks the HTML DOM recursively and accumulates an `InlineItem[]` IR (text, break, image, link); the second converts that IR to docx `TextRun`/`ExternalHyperlink`/`ImageRun` objects. This split avoids interleaving async image loading with docx object construction.
+- `loadImage()` resolves wikilink-style `src` values relative to the active file's vault folder, reads binary via `app.vault.readBinary`, and parses PNG/JPEG dimensions from raw bytes so images are scaled to `IMAGE_MAX_WIDTH` (400 px) with correct aspect ratio.
+- `processList()` is recursive: it separates inline text nodes from nested `<ul>`/`<ol>` children within each `<li>`, emitting a `Paragraph` with `numbering` or `bullet` at the current `level`, then recursing for nested lists.
+- The single ordered-list numbering reference `ORDERED_REF` is defined once in the `Document` with 9 levels; all ordered list paragraphs reference it by level index.
 
 **Debug export:** The modal also has an "Export HTML (debug)" button that calls `convertDocxToHtml()` (exported from `converter.ts`). It writes `raw.html` (mammoth output before DOM patching) and `fixed.html` (after `fixNestedLists()`) into the target folder without doing the full markdown conversion. Useful for diagnosing list or styling issues.
 
