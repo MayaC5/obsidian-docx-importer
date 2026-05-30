@@ -1,7 +1,7 @@
 {
   "id": "docx-importer",
   "name": "DOCX Importer",
-  "version": "0.2.2",
+  "version": "0.2.1",
   "minAppVersion": "1.4.0",
   "description": "Import DOCX files into your vault as Markdown, and export notes back to DOCX.",
   "author": "Maya Chan",
