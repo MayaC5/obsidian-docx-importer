@@ -57,14 +57,14 @@ const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 // Returns one entry per <w:r> in <w:body> (document order): the hex color string
 // (e.g. "FF0000") or null if the run has no explicit non-black color.
-function extractBodyRunColors(buffer: ArrayBuffer): (string | null)[] {
+async function extractBodyRunColors(buffer: ArrayBuffer): Promise<(string | null)[]> {
 	try {
-		const { unzipSync, strFromU8 } = require('fflate') as typeof import('fflate');
-		const unzipped = unzipSync(new Uint8Array(buffer));
-		const xmlBytes = unzipped['word/document.xml'];
-		if (!xmlBytes) return [];
+		const JSZip = require('jszip') as typeof import('jszip');
+		const zip = await JSZip.loadAsync(new Uint8Array(buffer));
+		const xmlFile = zip.file('word/document.xml');
+		if (!xmlFile) return [];
 
-		const xmlStr = strFromU8(xmlBytes);
+		const xmlStr = await xmlFile.async('text');
 		const doc = new DOMParser().parseFromString(xmlStr, 'text/xml');
 
 		const body = doc.getElementsByTagNameNS(W_NS, 'body')[0];
@@ -151,7 +151,7 @@ export async function convertDocxToMarkdown(buffer: ArrayBuffer): Promise<Conver
 	let imageCounter = 0;
 
 	// Parse raw XML first to collect per-run color info (mammoth drops w:color).
-	const runColors = extractBodyRunColors(buffer);
+	const runColors = await extractBodyRunColors(buffer);
 	const uniqueColors = [...new Set(runColors.filter((c): c is string => c !== null))];
 
 	// One styleMap entry per unique color: match the fake styleName we inject below.

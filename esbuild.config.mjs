@@ -80,8 +80,25 @@ const context = await esbuild.context({
   logLevel: "info",
   sourcemap: prod ? false : "inline",
   treeShaking: true,
+  minify: prod,
   outfile: "main.js",
   plugins: [
+    {
+      // dingbat-to-unicode is a 116 KB lookup table used by mammoth to convert
+      // Wingdings/Symbol chars. mammoth falls back gracefully (emits a warning,
+      // skips the character) when hex() returns null, so a stub is safe.
+      name: "stub-dingbat-to-unicode",
+      setup(build) {
+        build.onResolve({ filter: /^dingbat-to-unicode$/ }, (args) => ({
+          path: args.path,
+          namespace: "dingbat-stub",
+        }));
+        build.onLoad({ filter: /.*/, namespace: "dingbat-stub" }, () => ({
+          contents: "module.exports = { hex: () => null };",
+          loader: "js",
+        }));
+      },
+    },
     {
       name: "patch-jszip-ie8-polyfill",
       setup(build) {
