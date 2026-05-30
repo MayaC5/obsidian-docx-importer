@@ -20,13 +20,8 @@ There are no tests. TypeScript type-checking runs as part of `npm run build` via
 
 After building, copy the plugin files into the vault:
 ```bash
-PLUGIN=/path/to/vault/.obsidian/plugins/docx-importer
-cp main.js manifest.json styles.css "$PLUGIN/"
-mkdir -p "$PLUGIN/node_modules"
-cp -r node_modules/mammoth "$PLUGIN/node_modules/mammoth"
-cp -r node_modules/docx "$PLUGIN/node_modules/docx"
+cp main.js manifest.json styles.css /path/to/vault/.obsidian/plugins/docx-importer/
 ```
-`mammoth` and `docx` are marked external in esbuild and resolved by Electron's `require()` at runtime — both must be present as `node_modules/<pkg>/` inside the plugin folder.
 
 Then reload the plugin in Obsidian: **Settings → Community plugins → reload icon** next to DOCX Importer.
 
@@ -93,7 +88,8 @@ Key details in `exporter.ts`:
 ## Key constraints
 
 - `isDesktopOnly: true` in `manifest.json` — no mobile support; Electron and Node.js APIs are safe to use.
-- `electron`, `mammoth`, `docx`, and all Node.js builtins are marked external in `esbuild.config.mjs` — do not import them at the top level; use `require()` inside functions so the bundle stays valid. `fflate`, `turndown`, and `marked` are bundled. `fflate` is loaded via `require()` inside `extractBodyRunColors` for consistency with the other runtime-only requires.
+- `electron` and all Node.js builtins are marked external in `esbuild.config.mjs` — do not import them at the top level; use `require()` inside functions so the bundle stays valid. All other dependencies (`mammoth`, `docx`, `fflate`, `turndown`, `marked`) are bundled. `fflate` is loaded via `require()` inside `extractBodyRunColors` for consistency.
+- `esbuild.config.mjs` runs a post-build patch (`patchJsZipIE8Polyfill`) that removes the IE8 `onreadystatechange` script-element polyfill from JSZip's code (bundled inside both `mammoth` and `docx`). This is dead code in Electron/Chromium — `MutationObserver` is always available — but static scanners flag `createElement("script")`. If `jszip` is upgraded, verify the patch strings still match.
 - Image links in generated Markdown use Obsidian wikilink syntax: `![[attachments/image1.png]]`, not standard `![](...)`.
 - The attachment subfolder name is hardcoded as `attachments`.
 - The imported `.docx` is always renamed to `[folderName].docx` inside the new subfolder, regardless of the original filename.

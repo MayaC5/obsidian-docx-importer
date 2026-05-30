@@ -1,8 +1,57 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from "module";
+import { readFileSync, writeFileSync } from "fs";
 
 const prod = process.argv[2] === "production";
+
+// JSZip (bundled inside mammoth and docx) includes an IE8/IE9 async-scheduling
+// polyfill that creates a <script> element to trigger onreadystatechange. This
+// path is never reached in Electron/Chromium (MutationObserver is always
+// available), but static scanners flag createElement("script") regardless.
+// We patch both occurrences out of the bundle, replacing them with the
+// setTimeout fallback that Chromium always uses anyway.
+function patchJsZipIE8Polyfill() {
+  let code = readFileSync("main.js", "utf8");
+
+  // Pattern 1: MutationObserver fallback scheduler (JSZip internal promise queue)
+  // r = "document" in t2 && "onreadystatechange" in t2.document.createElement("script")
+  //   ? function() { var e3 = t2.document.createElement("script"); ... }
+  //   : function() { setTimeout(u, 0); };
+  code = code.replaceAll(
+    `r = "document" in t2 && "onreadystatechange" in t2.document.createElement("script") ? function() {
+              var e3 = t2.document.createElement("script");
+              e3.onreadystatechange = function() {
+                u(), e3.onreadystatechange = null, e3.parentNode.removeChild(e3), e3 = null;
+              }, t2.document.documentElement.appendChild(e3);
+            } : function() {
+              setTimeout(u, 0);
+            };`,
+    `r = function() {
+              setTimeout(u, 0);
+            };`
+  );
+
+  // Pattern 2: setImmediate polyfill scheduler (JSZip internal)
+  // }) : l4 && "onreadystatechange" in l4.createElement("script")
+  //   ? (s = l4.documentElement, function(e4) { var t3 = l4.createElement("script"); ... })
+  //   : function(e4) { setTimeout(c, 0, e4); }
+  code = code.replaceAll(
+    `}) : l4 && "onreadystatechange" in l4.createElement("script") ? (s = l4.documentElement, function(e4) {
+                var t3 = l4.createElement("script");
+                t3.onreadystatechange = function() {
+                  c(e4), t3.onreadystatechange = null, s.removeChild(t3), t3 = null;
+                }, s.appendChild(t3);
+              }) : function(e4) {
+                setTimeout(c, 0, e4);
+              }`,
+    `}) : function(e4) {
+                setTimeout(c, 0, e4);
+              }`
+  );
+
+  writeFileSync("main.js", code);
+}
 
 const context = await esbuild.context({
   banner: {
@@ -13,8 +62,6 @@ const context = await esbuild.context({
   external: [
     "obsidian",
     "electron",
-    "mammoth",
-    "docx",
     "@codemirror/autocomplete",
     "@codemirror/collab",
     "@codemirror/commands",
@@ -34,6 +81,14 @@ const context = await esbuild.context({
   sourcemap: prod ? false : "inline",
   treeShaking: true,
   outfile: "main.js",
+  plugins: [
+    {
+      name: "patch-jszip-ie8-polyfill",
+      setup(build) {
+        build.onEnd(() => patchJsZipIE8Polyfill());
+      },
+    },
+  ],
 });
 
 if (prod) {
