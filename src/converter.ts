@@ -13,8 +13,7 @@ export interface ConversionResult {
 }
 
 function fixNestedLists(html: string): string {
-	const div = document.createElement('div');
-	div.innerHTML = html;
+	const div = new DOMParser().parseFromString(html, 'text/html').body;
 
 	// Pass 1: list emitted as direct child of another list instead of inside <li>
 	div.querySelectorAll('ol > ol, ol > ul, ul > ol, ul > ul').forEach(nested => {
@@ -58,16 +57,14 @@ const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 // Returns one entry per <w:r> in <w:body> (document order): the hex color string
 // (e.g. "FF0000") or null if the run has no explicit non-black color.
-async function extractBodyRunColors(buffer: ArrayBuffer): Promise<(string | null)[]> {
+function extractBodyRunColors(buffer: ArrayBuffer): (string | null)[] {
 	try {
-		// JSZip is bundled; require() keeps it out of the top-level module scope
-		// consistent with how we handle other runtime-only libs in this plugin.
-		const JSZip = require('jszip') as typeof import('jszip');
-		const zip = await JSZip.loadAsync(buffer);
-		const xmlFile = zip.file('word/document.xml');
-		if (!xmlFile) return [];
+		const { unzipSync, strFromU8 } = require('fflate') as typeof import('fflate');
+		const unzipped = unzipSync(new Uint8Array(buffer));
+		const xmlBytes = unzipped['word/document.xml'];
+		if (!xmlBytes) return [];
 
-		const xmlStr = await xmlFile.async('string');
+		const xmlStr = strFromU8(xmlBytes);
 		const doc = new DOMParser().parseFromString(xmlStr, 'text/xml');
 
 		const body = doc.getElementsByTagNameNS(W_NS, 'body')[0];
@@ -154,7 +151,7 @@ export async function convertDocxToMarkdown(buffer: ArrayBuffer): Promise<Conver
 	let imageCounter = 0;
 
 	// Parse raw XML first to collect per-run color info (mammoth drops w:color).
-	const runColors = await extractBodyRunColors(buffer);
+	const runColors = extractBodyRunColors(buffer);
 	const uniqueColors = [...new Set(runColors.filter((c): c is string => c !== null))];
 
 	// One styleMap entry per unique color: match the fake styleName we inject below.

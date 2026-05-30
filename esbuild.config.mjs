@@ -13,6 +13,8 @@ const context = await esbuild.context({
   external: [
     "obsidian",
     "electron",
+    "mammoth",
+    "docx",
     "@codemirror/autocomplete",
     "@codemirror/collab",
     "@codemirror/commands",

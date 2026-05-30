@@ -379,8 +379,7 @@ export async function convertMarkdownToDocx(
 	const preprocessed = preprocessMarkdown(markdown, settings);
 	const html = marked.parse(preprocessed) as string;
 
-	const container = document.createElement('div');
-	container.innerHTML = html;
+	const container = new DOMParser().parseFromString(html, 'text/html').body;
 
 	const children = await processBlocks(container, app, activeFile);
 	if (children.length === 0) children.push(new Paragraph({}));

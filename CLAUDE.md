@@ -20,8 +20,14 @@ There are no tests. TypeScript type-checking runs as part of `npm run build` via
 
 After building, copy the plugin files into the vault:
 ```bash
-cp main.js manifest.json /path/to/vault/.obsidian/plugins/docx-importer/
+PLUGIN=/path/to/vault/.obsidian/plugins/docx-importer
+cp main.js manifest.json styles.css "$PLUGIN/"
+mkdir -p "$PLUGIN/node_modules"
+cp -r node_modules/mammoth "$PLUGIN/node_modules/mammoth"
+cp -r node_modules/docx "$PLUGIN/node_modules/docx"
 ```
+`mammoth` and `docx` are marked external in esbuild and resolved by Electron's `require()` at runtime — both must be present as `node_modules/<pkg>/` inside the plugin folder.
+
 Then reload the plugin in Obsidian: **Settings → Community plugins → reload icon** next to DOCX Importer.
 
 ## Architecture
@@ -59,8 +65,11 @@ Key details in `converter.ts`:
 All vault writes go through `app.vault` API (not raw `fs`) so Obsidian tracks the new files.
 
 **UI flow** (`src/ui/ImportModal.ts`):
-1. User picks a `.docx` via Electron `dialog` API (`require('electron').remote`), types a subfolder name (pre-filled from filename), and picks a parent folder via `FolderSuggester`.
-2. On confirm: validate (non-empty name, no existing subfolder conflict) → read file with Node `fs.readFileSync` → run conversion → write files → open the new `.md` in the editor.
+- The Electron `dialog` opens with `multiSelections` enabled. Single vs. batch mode is determined by how many files the user picks.
+- **Single file:** shows a "Note name" text field (pre-filled from filename); validates non-empty name and no existing subfolder conflict before importing.
+- **Batch mode (2+ files):** hides the "Note name" field; renders a scrollable file list (CSS in `styles.css`, classes `.docx-batch-*`) where each row has its own editable note name input with real-time conflict detection. After import, opens the first successfully imported `.md`.
+- Both modes: user picks a parent folder via `FolderSuggester` (`src/ui/FolderSuggester.ts`, wraps `FuzzySuggestModal`); files are read with Node `fs.readFileSync`, converted, then written via `writeImportedFiles`.
+- "Export HTML (debug)" only works in single-file mode.
 
 **Export pipeline** (`src/exporter.ts`):
 ```
@@ -84,7 +93,7 @@ Key details in `exporter.ts`:
 ## Key constraints
 
 - `isDesktopOnly: true` in `manifest.json` — no mobile support; Electron and Node.js APIs are safe to use.
-- `electron` and all Node.js builtins are marked external in `esbuild.config.mjs` — do not import them at the top level; use `require()` inside functions so the bundle stays valid. JSZip is an exception: it is bundled (not external) and is also loaded via `require()` inside the function for consistency.
+- `electron`, `mammoth`, `docx`, and all Node.js builtins are marked external in `esbuild.config.mjs` — do not import them at the top level; use `require()` inside functions so the bundle stays valid. `fflate`, `turndown`, and `marked` are bundled. `fflate` is loaded via `require()` inside `extractBodyRunColors` for consistency with the other runtime-only requires.
 - Image links in generated Markdown use Obsidian wikilink syntax: `![[attachments/image1.png]]`, not standard `![](...)`.
 - The attachment subfolder name is hardcoded as `attachments`.
 - The imported `.docx` is always renamed to `[folderName].docx` inside the new subfolder, regardless of the original filename.

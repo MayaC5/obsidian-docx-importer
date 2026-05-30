@@ -1,6 +1,6 @@
 {
   "name": "obsidian-docx-importer",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Import DOCX files into Obsidian vault as Markdown",
   "main": "main.js",
   "scripts": {
@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "docx": "^9.7.1",
-    "jszip": "^3.10.1",
+    "fflate": "^0.8.3",
     "mammoth": "^1.8.0",
     "marked": "^18.0.4",
     "turndown": "^7.2.0"
