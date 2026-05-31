@@ -2,7 +2,7 @@
 set -e
 
 VERSION=$(node -p "require('./manifest.json').version")
-TAG="v$VERSION"
+TAG="$VERSION"
 
 echo "Releasing $TAG..."
 
