@@ -19,6 +19,26 @@ function map(collection, callback) {
 	return result;
 }
 
+function foldl(collection, callback, initialValue) {
+	let accumulator = initialValue;
+	let hasAccumulator = arguments.length >= 3;
+	forEach(collection, (value, key, source) => {
+		if (!hasAccumulator) {
+			accumulator = value;
+			hasAccumulator = true;
+		} else {
+			accumulator = callback(accumulator, value, key, source);
+		}
+	});
+	return accumulator;
+}
+
+function clone(value) {
+	if (Array.isArray(value)) return value.slice();
+	if (value !== null && typeof value === 'object') return Object.assign({}, value);
+	return value;
+}
+
 function filter(collection, callback) {
 	const result = [];
 	forEach(collection, (value, key, source) => {
@@ -87,10 +107,12 @@ function indexBy(collection, callback) {
 
 module.exports = {
 	any: some,
+	clone,
 	extend: Object.assign,
 	filter,
 	find,
 	findIndex: (collection, callback) => Array.prototype.findIndex.call(collection, callback),
+	foldl,
 	flatten,
 	forEach,
 	indexBy,
