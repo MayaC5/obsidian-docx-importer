@@ -351,9 +351,54 @@ async function processBlocks(
 
 // ── preprocessing ─────────────────────────────────────────────────────────────
 
+function escapeUnclosedAnglePlaceholders(markdown: string): string {
+	const closingTags = new Set(
+		Array.from(markdown.matchAll(/<\/([A-Za-z][A-Za-z0-9-]*)\s*>/g), match => match[1].toLowerCase()),
+	);
+	let fence: { marker: string; length: number } | null = null;
+
+	return markdown.split('\n').map(line => {
+		const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+		if (fenceMatch) {
+			const marker = fenceMatch[1][0];
+			if (!fence) fence = { marker, length: fenceMatch[1].length };
+			else if (fence.marker === marker && fenceMatch[1].length >= fence.length) fence = null;
+			return line;
+		}
+		if (fence) return line;
+
+		let result = '';
+		for (let index = 0; index < line.length;) {
+			if (line[index] === '`') {
+				const delimiter = /^`+/.exec(line.slice(index))![0];
+				const closingIndex = line.indexOf(delimiter, index + delimiter.length);
+				if (closingIndex !== -1) {
+					const end = closingIndex + delimiter.length;
+					result += line.slice(index, end);
+					index = end;
+					continue;
+				}
+			}
+
+			const match = /^<([A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z0-9-]+)*)>/.exec(line.slice(index));
+			if (match && line[index - 1] !== '\\') {
+				const tag = match[1].split(/\s/, 1)[0].toLowerCase();
+				if (!closingTags.has(tag) && tag !== 'br' && tag !== 'hr') result += '\\';
+				result += match[0];
+				index += match[0].length;
+				continue;
+			}
+
+			result += line[index++];
+		}
+		return result;
+	}).join('\n');
+}
+
 function preprocessMarkdown(markdown: string, settings: ExporterSettings): string {
 	// Strip YAML frontmatter
 	let md = markdown.replace(/^---[\r\n][\s\S]*?[\r\n]---[\r\n]?/, '');
+	md = escapeUnclosedAnglePlaceholders(md);
 
 	// ![[path]] → <img src="path"> (image wikilinks)
 	md = md.replace(/!\[\[([^\]]+)\]\]/g, (_, path) => `<img src="${path}">`);

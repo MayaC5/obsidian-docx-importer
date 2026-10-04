@@ -106,6 +106,12 @@ const BASE_STYLE_MAP = [
 
 function buildTurndownService(): TurndownService {
 	const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' });
+	const escapeMarkdown = td.escape.bind(td);
+
+	// A literal "<" in document text can be interpreted as an HTML tag by
+	// Obsidian. Escape it while Turndown processes text nodes; HTML deliberately
+	// emitted by rules such as coloredSpan remains unchanged.
+	td.escape = (text: string) => escapeMarkdown(text).replace(/</g, '\\<');
 
 	td.addRule('highlight', {
 		filter: ['mark'],
