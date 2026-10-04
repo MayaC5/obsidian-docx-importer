@@ -1,11 +1,11 @@
-import { App, Modal, Notice, Setting, TFile, TFolder, TextComponent } from 'obsidian';
+import { App, ButtonComponent, Modal, Notice, Setting, TFile, TFolder, TextComponent } from 'obsidian';
 import DocxImporterPlugin from '../main';
 import { FolderSuggester } from './FolderSuggester';
 import { convertDocxToMarkdown, convertDocxToHtml } from '../converter';
 import { writeImportedFiles } from '../fileManager';
 
 interface SelectedFile {
-	path: string;
+	data: ArrayBuffer;
 	name: string;
 	folderName: string;
 }
@@ -26,38 +26,18 @@ export class ImportModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.createEl('h2', { text: 'Import DOCX' });
+		const fileInput = contentEl.createEl('input', { type: 'file' });
+		fileInput.accept = '.docx';
+		fileInput.multiple = true;
+		fileInput.hide();
 
 		new Setting(contentEl)
 			.setName('DOCX file')
 			.setDesc('Select one or more .docx files to import')
 			.addButton(btn => {
-				btn.setButtonText('Choose file…').onClick(async () => {
-					const { dialog } = require('electron').remote;
-					const result = await dialog.showOpenDialog({
-						properties: ['openFile', 'multiSelections'],
-						filters: [{ name: 'Word Documents', extensions: ['docx'] }],
-					});
-					if (result.canceled || !result.filePaths.length) return;
-
-					this.selectedFiles = result.filePaths.map((filePath: string) => {
-						const name = filePath.split(/[\\/]/).pop()!;
-						const folderName = name.replace(/\.docx$/i, '');
-						return { path: filePath, name, folderName };
-					});
-
-					if (this.selectedFiles.length === 1) {
-						btn.setButtonText(this.selectedFiles[0].name);
-						if (!this.folderName) {
-							this.folderName = this.selectedFiles[0].folderName;
-							this.folderNameText.setValue(this.folderName);
-						}
-						this.noteNameSetting.settingEl.show();
-						this.fileListEl.empty();
-					} else {
-						btn.setButtonText(`${this.selectedFiles.length} files selected`);
-						this.noteNameSetting.settingEl.hide();
-						this.renderFileList();
-					}
+				btn.setButtonText('Choose file…').onClick(() => fileInput.click());
+				fileInput.addEventListener('change', () => {
+					void this.selectFiles(fileInput.files, btn);
 				});
 			});
 
@@ -66,7 +46,7 @@ export class ImportModal extends Modal {
 			.setDesc('Subfolder and note filename')
 			.addText(text => {
 				this.folderNameText = text;
-				text.setPlaceholder('e.g. My Document')
+				text.setPlaceholder('My document')
 					.setValue(this.folderName)
 					.onChange(val => { this.folderName = val; });
 			});
@@ -96,12 +76,36 @@ export class ImportModal extends Modal {
 				.setCta()
 				.onClick(() => {
 					if (this.selectedFiles.length > 1) {
-						this.doBatchImport();
+						void this.doBatchImport();
 					} else {
-						this.doImport();
+						void this.doImport();
 					}
 				})
 			);
+	}
+
+	private async selectFiles(files: FileList | null, button: ButtonComponent): Promise<void> {
+		if (!files?.length) return;
+
+		this.selectedFiles = await Promise.all(Array.from(files, async file => ({
+			data: await file.arrayBuffer(),
+			name: file.name,
+			folderName: file.name.replace(/\.docx$/i, ''),
+		})));
+
+		if (this.selectedFiles.length === 1) {
+			button.setButtonText(this.selectedFiles[0].name);
+			if (!this.folderName) {
+				this.folderName = this.selectedFiles[0].folderName;
+				this.folderNameText.setValue(this.folderName);
+			}
+			this.noteNameSetting.settingEl.show();
+			this.fileListEl.empty();
+		} else {
+			button.setButtonText(`${this.selectedFiles.length} files selected`);
+			this.noteNameSetting.settingEl.hide();
+			this.renderFileList();
+		}
 	}
 
 	private getTargetPath(folderName: string): string {
@@ -113,17 +117,17 @@ export class ImportModal extends Modal {
 		this.fileListEl.empty();
 
 		const header = this.fileListEl.createDiv({ cls: 'docx-batch-row docx-batch-header' });
-		header.createEl('span', { text: 'File', cls: 'docx-batch-filename' });
-		header.createEl('span', { text: 'Note name', cls: 'docx-batch-label' });
+		header.createSpan({ text: 'File', cls: 'docx-batch-filename' });
+		header.createSpan({ text: 'Note name', cls: 'docx-batch-label' });
 
 		for (const file of this.selectedFiles) {
 			const row = this.fileListEl.createDiv({ cls: 'docx-batch-row' });
-			row.createEl('span', { text: file.name, cls: 'docx-batch-filename' });
+			row.createSpan({ text: file.name, cls: 'docx-batch-filename' });
 
 			const input = row.createEl('input', { type: 'text', value: file.folderName });
 			input.addClass('docx-batch-name-input');
 
-			const conflict = row.createEl('span', { cls: 'docx-batch-conflict' });
+			const conflict = row.createSpan({ cls: 'docx-batch-conflict' });
 
 			const check = () => {
 				file.folderName = input.value.trim();
@@ -156,9 +160,7 @@ export class ImportModal extends Modal {
 		}
 
 		try {
-			const fs = require('fs') as typeof import('fs');
-			const raw = fs.readFileSync(this.selectedFiles[0].path);
-			const buffer: ArrayBuffer = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+			const buffer = this.selectedFiles[0].data;
 
 			const result = await convertDocxToMarkdown(buffer);
 			await writeImportedFiles(this.app, parent, this.folderName, buffer, `${this.folderName}.docx`, result);
@@ -178,7 +180,6 @@ export class ImportModal extends Modal {
 
 	private async doBatchImport() {
 		const parent = this.selectedFolder ?? this.app.vault.getRoot();
-		const fs = require('fs') as typeof import('fs');
 		let firstMd: TFile | null = null;
 		let successCount = 0;
 		let errorCount = 0;
@@ -199,10 +200,8 @@ export class ImportModal extends Modal {
 			}
 
 			try {
-				const raw = fs.readFileSync(file.path);
-				const buffer: ArrayBuffer = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
-				const result = await convertDocxToMarkdown(buffer);
-				await writeImportedFiles(this.app, parent, name, buffer, `${name}.docx`, result);
+				const result = await convertDocxToMarkdown(file.data);
+				await writeImportedFiles(this.app, parent, name, file.data, `${name}.docx`, result);
 
 				if (!firstMd) {
 					const mdFile = this.app.vault.getAbstractFileByPath(`${targetPath}/${name}.md`);
@@ -240,11 +239,7 @@ export class ImportModal extends Modal {
 		const targetPath = parent.isRoot() ? this.folderName : `${parent.path}/${this.folderName}`;
 
 		try {
-			const fs = require('fs') as typeof import('fs');
-			const raw = fs.readFileSync(this.selectedFiles[0].path);
-			const buffer: ArrayBuffer = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
-
-			const { rawHtml, fixedHtml } = await convertDocxToHtml(buffer);
+			const { rawHtml, fixedHtml } = await convertDocxToHtml(this.selectedFiles[0].data);
 
 			if (!this.app.vault.getAbstractFileByPath(targetPath)) {
 				await this.app.vault.createFolder(targetPath);

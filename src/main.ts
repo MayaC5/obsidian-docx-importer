@@ -11,10 +11,61 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	wikilinksAsPlainText: true,
 };
 
+interface SavePickerOptions {
+	suggestedName?: string;
+	types?: Array<{
+		description: string;
+		accept: Record<string, string[]>;
+	}>;
+}
+
+type SaveFilePicker = (options?: SavePickerOptions) => Promise<FileSystemFileHandle>;
+
+function isStoredSettings(value: unknown): value is Partial<PluginSettings> {
+	if (value === null || typeof value !== 'object') return false;
+	const settings = value as { wikilinksAsPlainText?: unknown };
+	return settings.wikilinksAsPlainText === undefined || typeof settings.wikilinksAsPlainText === 'boolean';
+}
+
+async function saveDocxFile(data: ArrayBuffer, suggestedName: string): Promise<boolean> {
+	const fileWindow = window as Window & { showSaveFilePicker?: SaveFilePicker };
+	const blob = new Blob([data], {
+		type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+	});
+
+	if (fileWindow.showSaveFilePicker) {
+		try {
+			const handle = await fileWindow.showSaveFilePicker({
+				suggestedName,
+				types: [{
+					description: 'Word documents',
+					accept: { [blob.type]: ['.docx'] },
+				}],
+			});
+			const writable = await handle.createWritable();
+			await writable.write(blob);
+			await writable.close();
+			return true;
+		} catch (error) {
+			if (error instanceof DOMException && error.name === 'AbortError') return false;
+			throw error;
+		}
+	}
+
+	const url = URL.createObjectURL(blob);
+	const link = document.body.createEl('a', {
+		attr: { href: url, download: suggestedName },
+	});
+	link.click();
+	link.remove();
+	window.setTimeout(() => URL.revokeObjectURL(url), 0);
+	return true;
+}
+
 export default class DocxImporterPlugin extends Plugin {
 	settings!: PluginSettings;
 
-	async onload() {
+	async onload(): Promise<void> {
 		await this.loadSettings();
 		this.addSettingTab(new DocxImporterSettingsTab(this.app, this));
 
@@ -23,7 +74,7 @@ export default class DocxImporterPlugin extends Plugin {
 		});
 
 		this.addRibbonIcon('download', 'Export note as DOCX', () => {
-			this.exportActiveNote();
+			void this.exportActiveNote();
 		});
 
 		this.addCommand({
@@ -41,34 +92,30 @@ export default class DocxImporterPlugin extends Plugin {
 
 	onunload() {}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	async loadSettings(): Promise<void> {
+		const stored: unknown = await this.loadData();
+		this.settings = {
+			...DEFAULT_SETTINGS,
+			...(isStoredSettings(stored) ? stored : {}),
+		};
 	}
 
-	async saveSettings() {
+	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 	}
 
-	private async exportActiveNote() {
+	private async exportActiveNote(): Promise<void> {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile || activeFile.extension !== 'md') {
-			new Notice('Open a markdown note to export.');
+			new Notice('Open a Markdown note to export.');
 			return;
 		}
-
-		const { dialog } = require('electron').remote;
-		const outputPath: string | undefined = dialog.showSaveDialogSync({
-			defaultPath: activeFile.basename + '.docx',
-			filters: [{ name: 'Word Documents', extensions: ['docx'] }],
-		});
-		if (!outputPath) return;
 
 		try {
 			const markdown = await this.app.vault.read(activeFile);
 			const buffer = await convertMarkdownToDocx(markdown, this.app, activeFile, this.settings);
-			const fs = require('fs') as typeof import('fs');
-			fs.writeFileSync(outputPath, Buffer.from(buffer));
-			new Notice(`Exported "${activeFile.basename}" successfully.`);
+			const saved = await saveDocxFile(buffer, `${activeFile.basename}.docx`);
+			if (saved) new Notice(`Exported "${activeFile.basename}" successfully.`);
 		} catch (err) {
 			new Notice(`Export failed: ${(err as Error).message}`);
 			console.error(err);

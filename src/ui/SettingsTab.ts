@@ -6,13 +6,24 @@ export class DocxImporterSettingsTab extends PluginSettingTab {
 		super(app, plugin);
 	}
 
+	getSettingDefinitions() {
+		return [{
+			name: 'Keep non-attachment wikilinks',
+			desc: 'Export [[Note Name]] links as plain text. When disabled, these links are removed.',
+			control: {
+				type: 'toggle',
+				key: 'wikilinksAsPlainText',
+			},
+		}];
+	}
+
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
 		new Setting(containerEl)
 			.setName('Non-attachment wikilinks')
-			.setDesc('How to handle [[Note Name]] links (not image attachments) when exporting to DOCX.')
+			.setDesc('How to handle [[note name]] links (not image attachments) when exporting to DOCX.')
 			.addDropdown(drop => drop
 				.addOption('plaintext', 'Plain text')
 				.addOption('skip', 'Skip (remove)')

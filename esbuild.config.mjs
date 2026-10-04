@@ -44,13 +44,15 @@ function loadSafeDocx(args) {
   let contents = readFileSync(args.path, "utf8");
   const dynamicBind = 'bound = Function("binder", "return function (" + joiny(boundArgs, ",") + "){ return binder.apply(this,arguments); }")(binder);';
   const dynamicGenerator = 'return Function("return function*() {}")();';
+  const browserBase64 = 'return new Uint8Array(atob(dataURI.substring(base64IndexWithOffset)).split("").map((c) => c.charCodeAt(0)));';
   const dynamicIntrinsic = `var getEvalledConstructor = function(expressionSyntax) {
 		try {
 			return $Function("\\"use strict\\"; return (" + expressionSyntax + ").constructor;")();
 		} catch (e) {}
 	};`;
 
-  if (!contents.includes(dynamicBind) || !contents.includes(dynamicGenerator) || !contents.includes(dynamicIntrinsic)) {
+  if (!contents.includes(dynamicBind) || !contents.includes(dynamicGenerator) ||
+      !contents.includes(dynamicIntrinsic) || !contents.includes(browserBase64)) {
     throw new Error("docx compatibility helpers changed; review the safe replacements before upgrading docx.");
   }
 
@@ -58,6 +60,10 @@ function loadSafeDocx(args) {
   contents = contents.replace(dynamicBind, 'bound = function() { return binder.apply(this, arguments); };');
   contents = contents.replace(dynamicGenerator, 'return function*() {};');
   contents = contents.replace(dynamicIntrinsic, 'var getEvalledConstructor = function() {};');
+  contents = contents.replace(
+    browserBase64,
+    'return Uint8Array.from(Buffer.from(dataURI.substring(base64IndexWithOffset), "base64"));',
+  );
   return { contents, loader: "js" };
 }
 

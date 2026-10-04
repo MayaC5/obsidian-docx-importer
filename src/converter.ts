@@ -1,5 +1,6 @@
 import TurndownService from 'turndown';
 import mammoth from 'mammoth';
+import JSZip from 'jszip';
 
 export interface ConvertedImage {
 	filename: string;
@@ -59,8 +60,7 @@ const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 // (e.g. "FF0000") or null if the run has no explicit non-black color.
 async function extractBodyRunColors(buffer: ArrayBuffer): Promise<(string | null)[]> {
 	try {
-		const JSZip = require('jszip') as typeof import('jszip');
-		const zip = await JSZip.loadAsync(new Uint8Array(buffer));
+		const zip = await JSZip.loadAsync(buffer);
 		const xmlFile = zip.file('word/document.xml');
 		if (!xmlFile) return [];
 
@@ -106,7 +106,7 @@ const BASE_STYLE_MAP = [
 
 function buildTurndownService(): TurndownService {
 	const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' });
-	const escapeMarkdown = td.escape.bind(td);
+	const escapeMarkdown = td.escape.bind(td) as unknown as (text: string) => string;
 
 	// A literal "<" in document text can be interpreted as an HTML tag by
 	// Obsidian. Escape it while Turndown processes text nodes; HTML deliberately
@@ -139,6 +139,18 @@ export interface HtmlDebugResult {
 	fixedHtml: string;
 }
 
+interface MammothRun {
+	styleId?: string;
+	styleName?: string;
+	[key: string]: unknown;
+}
+
+interface MammothWithTransforms {
+	transforms: {
+		run(transform: (run: MammothRun) => MammothRun): (document: unknown) => unknown;
+	};
+}
+
 export async function convertDocxToHtml(buffer: ArrayBuffer): Promise<HtmlDebugResult> {
 	const result = await mammoth.convertToHtml(
 		{ arrayBuffer: buffer },
@@ -147,7 +159,7 @@ export async function convertDocxToHtml(buffer: ArrayBuffer): Promise<HtmlDebugR
 			convertImage: mammoth.images.imgElement(async () => ({ src: 'image-skipped' })),
 		}
 	);
-	const rawHtml = result.value as string;
+	const rawHtml = result.value;
 	return { rawHtml, fixedHtml: fixNestedLists(rawHtml) };
 }
 
@@ -168,15 +180,13 @@ export async function convertDocxToMarkdown(buffer: ArrayBuffer): Promise<Conver
 	// Counter to correlate mammoth's run traversal with the runColors index array.
 	// transforms.run() visits body runs in document order, matching our XML walk.
 	let runIndex = 0;
-	const transforms = (mammoth as any).transforms as {
-		run: (fn: (run: any) => any) => (doc: any) => any;
-	};
+	const { transforms } = mammoth as unknown as MammothWithTransforms;
 
 	const result = await mammoth.convertToHtml(
 		{ arrayBuffer: buffer },
 		{
 			styleMap: [...BASE_STYLE_MAP, ...colorStyleMap],
-			transformDocument: transforms.run((run: any) => {
+			transformDocument: transforms.run((run: MammothRun) => {
 				const color = runColors[runIndex];
 				runIndex++;
 				if (!color) return run;
@@ -192,7 +202,7 @@ export async function convertDocxToMarkdown(buffer: ArrayBuffer): Promise<Conver
 				const raw = await image.read();
 				images.push({
 					filename,
-					data: raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer,
+					data: Uint8Array.from(raw).buffer,
 					mimeType: image.contentType,
 				});
 				return { src: `attachments/${filename}` };
@@ -201,7 +211,7 @@ export async function convertDocxToMarkdown(buffer: ArrayBuffer): Promise<Conver
 	);
 
 	const td = buildTurndownService();
-	let markdown = td.turndown(fixNestedLists(result.value as string));
+	let markdown = td.turndown(fixNestedLists(result.value));
 
 	// Convert standard markdown image links to Obsidian wikilinks
 	markdown = markdown.replace(/!\[[^\]]*\]\(attachments\/([^)]+)\)/g, '![[attachments/$1]]');

@@ -10,6 +10,10 @@ export interface ExporterSettings {
 	wikilinksAsPlainText: boolean;
 }
 
+interface HighlightToken {
+	text: string;
+}
+
 // ── marked: custom ==highlight== extension ────────────────────────────────────
 
 marked.use({
@@ -22,7 +26,7 @@ marked.use({
 			if (match) return { type: 'obsidianHighlight', raw: match[0], text: match[1] };
 			return undefined;
 		},
-		renderer(token) { return `<mark>${(token as any).text}</mark>`; },
+		renderer(token) { return `<mark>${(token as unknown as HighlightToken).text}</mark>`; },
 	}],
 });
 
@@ -405,7 +409,10 @@ function preprocessMarkdown(markdown: string, settings: ExporterSettings): strin
 
 	// [[Note|Alias]] or [[Note]] → plain text or remove
 	if (settings.wikilinksAsPlainText) {
-		md = md.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, note, alias) => alias ?? note);
+		md = md.replace(
+			/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+			(_match: string, note: string, alias?: string) => alias ?? note,
+		);
 	} else {
 		md = md.replace(/\[\[[^\]]*\]\]/g, '');
 	}
