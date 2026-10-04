@@ -2,55 +2,63 @@ import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from "module";
 import { readFileSync, writeFileSync } from "fs";
+import { fileURLToPath } from "url";
 
 const prod = process.argv[2] === "production";
 
-// JSZip (bundled inside mammoth and docx) includes an IE8/IE9 async-scheduling
-// polyfill that creates a <script> element to trigger onreadystatechange. This
-// path is never reached in Electron/Chromium (MutationObserver is always
-// available), but static scanners flag createElement("script") regardless.
-// We patch both occurrences out of the bundle, replacing them with the
-// setTimeout fallback that Chromium always uses anyway.
-function patchJsZipIE8Polyfill() {
+// docx bundles legacy IE schedulers internally, so module aliases cannot reach
+// them. The branches are dead in Electron/Chromium. Replace their script nodes
+// with inert elements and reject the obsolete string-callback form of
+// setImmediate, then fail the build if dynamic code execution remains.
+function sanitizeLegacyPolyfills() {
   let code = readFileSync("main.js", "utf8");
 
-  // Pattern 1: MutationObserver fallback scheduler (JSZip internal promise queue)
-  // r = "document" in t2 && "onreadystatechange" in t2.document.createElement("script")
-  //   ? function() { var e3 = t2.document.createElement("script"); ... }
-  //   : function() { setTimeout(u, 0); };
-  code = code.replaceAll(
-    `r = "document" in t2 && "onreadystatechange" in t2.document.createElement("script") ? function() {
-              var e3 = t2.document.createElement("script");
-              e3.onreadystatechange = function() {
-                u(), e3.onreadystatechange = null, e3.parentNode.removeChild(e3), e3 = null;
-              }, t2.document.documentElement.appendChild(e3);
-            } : function() {
-              setTimeout(u, 0);
-            };`,
-    `r = function() {
-              setTimeout(u, 0);
-            };`
-  );
+  const scriptElements = code.match(/createElement\((['"])script\1\)/g) ?? [];
+  const stringCallbackPattern = /new Function\(\s*""\s*\+\s*[$A-Za-z_][$\w]*\s*\)/g;
+  const stringCallbacks = code.match(stringCallbackPattern) ?? [];
+  if (scriptElements.length !== 8 || stringCallbacks.length !== 2) {
+    throw new Error(
+      `Legacy polyfill signature changed: found ${scriptElements.length} script elements and ` +
+      `${stringCallbacks.length} string callbacks; review dependencies before updating the sanitizer.`
+    );
+  }
 
-  // Pattern 2: setImmediate polyfill scheduler (JSZip internal)
-  // }) : l4 && "onreadystatechange" in l4.createElement("script")
-  //   ? (s = l4.documentElement, function(e4) { var t3 = l4.createElement("script"); ... })
-  //   : function(e4) { setTimeout(c, 0, e4); }
-  code = code.replaceAll(
-    `}) : l4 && "onreadystatechange" in l4.createElement("script") ? (s = l4.documentElement, function(e4) {
-                var t3 = l4.createElement("script");
-                t3.onreadystatechange = function() {
-                  c(e4), t3.onreadystatechange = null, s.removeChild(t3), t3 = null;
-                }, s.appendChild(t3);
-              }) : function(e4) {
-                setTimeout(c, 0, e4);
-              }`,
-    `}) : function(e4) {
-                setTimeout(c, 0, e4);
-              }`
-  );
+  code = code.replace(/createElement\((['"])script\1\)/g, 'createElement("span")');
+  code = code.replace(stringCallbackPattern, '(() => { throw new TypeError("String callbacks are not supported"); })');
+
+  const forbidden = [
+    [/createElement\((['"])script\1\)/, 'script element creation'],
+    [/\beval\s*\(/, 'eval'],
+    [/\b(?:new\s+)?Function\s*\(/, 'Function constructor'],
+  ];
+  for (const [pattern, label] of forbidden) {
+    if (pattern.test(code)) throw new Error(`Unsafe ${label} remains in main.js`);
+  }
 
   writeFileSync("main.js", code);
+}
+
+const shim = name => fileURLToPath(new URL(`./build-shims/${name}`, import.meta.url));
+
+function loadSafeDocx(args) {
+  let contents = readFileSync(args.path, "utf8");
+  const dynamicBind = 'bound = Function("binder", "return function (" + joiny(boundArgs, ",") + "){ return binder.apply(this,arguments); }")(binder);';
+  const dynamicGenerator = 'return Function("return function*() {}")();';
+  const dynamicIntrinsic = `var getEvalledConstructor = function(expressionSyntax) {
+		try {
+			return $Function("\\"use strict\\"; return (" + expressionSyntax + ").constructor;")();
+		} catch (e) {}
+	};`;
+
+  if (!contents.includes(dynamicBind) || !contents.includes(dynamicGenerator) || !contents.includes(dynamicIntrinsic)) {
+    throw new Error("docx compatibility helpers changed; review the safe replacements before upgrading docx.");
+  }
+
+  // Preserving a bound function's exact `.length` is not required by docx.
+  contents = contents.replace(dynamicBind, 'bound = function() { return binder.apply(this, arguments); };');
+  contents = contents.replace(dynamicGenerator, 'return function*() {};');
+  contents = contents.replace(dynamicIntrinsic, 'var getEvalledConstructor = function() {};');
+  return { contents, loader: "js" };
 }
 
 const context = await esbuild.context({
@@ -84,6 +92,19 @@ const context = await esbuild.context({
   outfile: "main.js",
   plugins: [
     {
+      name: "safe-legacy-dependencies",
+      setup(build) {
+        build.onResolve({ filter: /^underscore$/ }, () => ({ path: shim("underscore.cjs") }));
+        build.onResolve({ filter: /^bluebird\/js\/release\/promise$/ }, () => ({ path: shim("bluebird-promise.cjs") }));
+        build.onResolve({ filter: /^immediate$/ }, () => ({ path: shim("immediate.cjs") }));
+        build.onResolve({ filter: /^setimmediate$/ }, () => ({ path: shim("setimmediate.cjs") }));
+        build.onLoad(
+          { filter: /[\\/]node_modules[\\/]docx[\\/]dist[\\/]index\.(?:cjs|mjs)$/ },
+          loadSafeDocx,
+        );
+      },
+    },
+    {
       // dingbat-to-unicode is a 116 KB lookup table used by mammoth to convert
       // Wingdings/Symbol chars. mammoth falls back gracefully (emits a warning,
       // skips the character) when hex() returns null, so a stub is safe.
@@ -100,9 +121,9 @@ const context = await esbuild.context({
       },
     },
     {
-      name: "patch-jszip-ie8-polyfill",
+      name: "sanitize-legacy-polyfills",
       setup(build) {
-        build.onEnd(() => patchJsZipIE8Polyfill());
+        build.onEnd(() => sanitizeLegacyPolyfills());
       },
     },
   ],
